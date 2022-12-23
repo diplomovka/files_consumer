@@ -106,7 +106,7 @@ def add_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
         usage_metadata[file_name]['at_indexes'].append(chunk_serial_num)
 
     else:
-        return
+        return False
 
     chunk_data = json.dumps(chunk_data).encode('utf-8')
     minio_client.put_object(
@@ -115,6 +115,8 @@ def add_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
         io.BytesIO(chunk_data),
         len(chunk_data)
     )
+
+    return True
 
 
 def remove_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
@@ -166,14 +168,17 @@ if __name__ == '__main__':
             print(f'{msg.key()} FileChunk {file_name}, {chunk_hash}, {chunk_serial_num}, {end_of_file}')
 
             pointer = redis_db.get(chunk_hash)
+            pointers_change_flag = True
             # check if chunk is unique
             if pointer is None:
                 pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
                                             file_name, settings.FILES_BYTES_BUCKET)
             else:
-                add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
+                pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
 
-            pointers_changed_flag = True
+            if not pointers_change_flag:
+                continue
+
             pointer_decoded = json.load(io.BytesIO(pointer))
             file_name_json_ext = Path(file_name).stem + '.json'
 
@@ -187,25 +192,22 @@ if __name__ == '__main__':
                     # content of the file was expanded
                     file_data['pointers'].append(pointer_decoded)
 
-                elif chunk_hash != file_data['pointers'][chunk_serial_num]['chunk_hash']:
+                else:
                     # content of the file was changed
                     replaced_chunk_hash = file_data['pointers'][chunk_serial_num]['chunk_hash']
                     remove_chunk_usage(replaced_chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
 
                     file_data['pointers'][chunk_serial_num] = pointer_decoded
 
-                else:
-                    pointers_changed_flag = False
+                    if end_of_file and (total_file_pointers - 1) > chunk_serial_num:
+                        # content of the file was shrinked
+                        f_pointers = file_data['pointers'][chunk_serial_num + 1:]
+                        for i, chunk_pointer in enumerate(f_pointers):
+                            f_chunk_serial_num = chunk_serial_num + i + 1
+                            remove_chunk_usage(chunk_pointer['chunk_hash'], f_chunk_serial_num, file_name, chunk_pointer['bucket'])
 
-                if end_of_file and (total_file_pointers - 1) > chunk_serial_num:
-                    # content of the file was shrinked
-                    f_pointers = file_data['pointers'][chunk_serial_num + 1:]
-                    for i, chunk_pointer in enumerate(f_pointers):
-                        f_chunk_serial_num = chunk_serial_num + i + 1
-                        remove_chunk_usage(chunk_pointer['chunk_hash'], f_chunk_serial_num, file_name, chunk_pointer['bucket'])
-
-                    # shrink list of chunk pointers
-                    file_data['pointers'] = file_data['pointers'][:chunk_serial_num + 1]
+                        # shrink list of chunk pointers
+                        file_data['pointers'] = file_data['pointers'][:chunk_serial_num + 1]
 
                 response.close()
                 response.release_conn()
@@ -215,7 +217,7 @@ if __name__ == '__main__':
                         'pointers': [pointer_decoded]
                     }
 
-            if pointers_changed_flag and file_data:
+            if pointers_change_flag and file_data:
                 file_data['original_file_name'] = file_name
                 file_data = json.dumps(file_data).encode('utf-8')
 
