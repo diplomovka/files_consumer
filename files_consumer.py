@@ -174,6 +174,8 @@ if __name__ == '__main__':
                 pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
                                             file_name, settings.FILES_BYTES_BUCKET)
             else:
+                with open('./experiments_results/number_of_duplicates.csv', 'a') as file:
+                    file.write(f'{file_name};{chunk_hash}\n')
                 pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
 
             if not pointers_change_flag:
