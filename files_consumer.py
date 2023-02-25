@@ -175,7 +175,7 @@ if __name__ == '__main__':
     consumer = set_up_consumer()
     redis_db = get_redis_db(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_FILES_DB)
 
-    create_directory(settings.EXPERIMENTS_DATA_FOLDER)
+    create_directory(settings.EXPERIMENTS_DATA_DIR)
 
     create_required_buckets([settings.FILES_BYTES_BUCKET, settings.FILES_POINTERS_BUCKET])
 
@@ -200,7 +200,7 @@ if __name__ == '__main__':
                                             file_name, settings.FILES_BYTES_BUCKET)
             else:
                 check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
-                    experiment_name, file_name, settings.EXPERIMENTS_DATA_FOLDER)
+                    experiment_name, file_name, settings.EXPERIMENTS_DATA_DIR)
                 pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
 
             if not pointers_change_flag:

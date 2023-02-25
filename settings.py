@@ -24,4 +24,4 @@ OFFSET = str(os.getenv('OFFSET') or 'earliest')
 ENCODING = str(os.getenv('ENCODING') or 'utf_8')
 AVRO_FILES_ENCODING = str(os.getenv('AVRO_FILES_ENCODING') or 'utf-8')
 
-EXPERIMENTS_DATA_FOLDER = str(os.getenv('EXPERIMENTS_DATA_FOLDER') or 'experiments_data')
+EXPERIMENTS_DATA_DIR = 'experiments_data'
