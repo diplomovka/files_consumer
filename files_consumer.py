@@ -1,5 +1,6 @@
 # created based on: https://github.com/confluentinc/confluent-kafka-python/blob/master/examples/avro_consumer.py
 
+import os
 import io
 import json
 import time
@@ -23,7 +24,8 @@ def dict_to_file_data(obj, ctx):
                     chunk=obj['chunk'],
                     chunk_hash=obj['chunk_hash'],
                     chunk_serial_num=obj['chunk_serial_num'],
-                    end_of_file=obj['end_of_file'])
+                    end_of_file=obj['end_of_file'],
+                    experiment_name=obj['experiment_name'])
 
 
 def set_up_consumer():
@@ -53,6 +55,11 @@ def set_up_consumer():
     return consumer
 
 
+def create_directory(directory_name):
+    if not os.path.exists(directory_name) or not os.path.isdir(directory_name):
+        os.mkdir(directory_name)
+
+
 def create_required_buckets(buckets):
     for bucket in buckets:
         if not minio_client.bucket_exists(bucket):
@@ -61,7 +68,7 @@ def create_required_buckets(buckets):
 
 def get_attributes(file_data):
     return (file_data.file_name, file_data.chunk.decode('utf-8'), file_data.chunk_hash,
-            file_data.chunk_serial_num, file_data.end_of_file)
+            file_data.chunk_serial_num, file_data.end_of_file, file_data.experiment_name)
 
 
 def update_pointer_data(chunk_hash, chunk, chunk_serial_num, file_name, bucket):
@@ -89,6 +96,22 @@ def update_pointer_data(chunk_hash, chunk, chunk_serial_num, file_name, bucket):
     redis_db.set(chunk_hash, pointer)
 
     return pointer
+
+
+def check_collision_and_duplicate(chunk_hash, curr_chunk_data, bucket, experiment_name, file_name, dir_name):
+    object_name = f'{chunk_hash}.json'
+    response = minio_client.get_object(bucket, object_name)
+    stored_chunk_data = json.load(io.BytesIO(response.data))['data']
+
+    create_directory(f'./{dir_name}/{experiment_name}')
+
+    if stored_chunk_data != curr_chunk_data:
+        with open(f'./{dir_name}/{experiment_name}/{experiment_name}_collisions.csv', 'a') as file:
+            file.write(f'{stored_chunk_data};{curr_chunk_data};{chunk_hash}\n')
+
+    else:
+        with open(f'./{dir_name}/{experiment_name}/{experiment_name}_duplicates.csv', 'a') as file:
+            file.write(f'{file_name};{chunk_hash}\n')
 
 
 def add_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
@@ -152,6 +175,8 @@ if __name__ == '__main__':
     consumer = set_up_consumer()
     redis_db = get_redis_db(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_FILES_DB)
 
+    create_directory(settings.EXPERIMENTS_DATA_FOLDER)
+
     create_required_buckets([settings.FILES_BYTES_BUCKET, settings.FILES_POINTERS_BUCKET])
 
     while True:
@@ -163,9 +188,9 @@ if __name__ == '__main__':
 
             file_data = msg.value()
 
-            file_name, chunk, chunk_hash, chunk_serial_num, end_of_file = get_attributes(file_data)
+            file_name, chunk, chunk_hash, chunk_serial_num, end_of_file, experiment_name = get_attributes(file_data)
 
-            print(f'{msg.key()} FileChunk {file_name}, {chunk_hash}, {chunk_serial_num}, {end_of_file}')
+            print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
 
             pointer = redis_db.get(chunk_hash)
             pointers_change_flag = True
@@ -174,8 +199,8 @@ if __name__ == '__main__':
                 pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
                                             file_name, settings.FILES_BYTES_BUCKET)
             else:
-                with open('./experiments_results/number_of_duplicates.csv', 'a') as file:
-                    file.write(f'{file_name};{chunk_hash}\n')
+                check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
+                    experiment_name, file_name, settings.EXPERIMENTS_DATA_FOLDER)
                 pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
 
             if not pointers_change_flag:
