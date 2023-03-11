@@ -182,7 +182,7 @@ if __name__ == '__main__':
     while True:
         try:
             # SIGINT can't be handled when polling, limit timeout to 1 second.
-            msg = consumer.poll(1)
+            msg = consumer.poll()
             if msg is None or msg.value() is None:
                 continue
 
@@ -190,7 +190,8 @@ if __name__ == '__main__':
 
             file_name, chunk, chunk_hash, chunk_serial_num, end_of_file, experiment_name = get_attributes(file_data)
 
-            print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
+            # print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
+            print(f'filename: {file_name}')
 
             pointer = redis_db.get(chunk_hash)
             pointers_change_flag = True

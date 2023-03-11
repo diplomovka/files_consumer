@@ -26,4 +26,4 @@ AVRO_FILES_ENCODING = str(os.getenv('AVRO_FILES_ENCODING') or 'utf-8')
 
 EXPERIMENTS_DATA_DIR = 'experiments_data'
 
-WAIT_BEFORE_START = int(os.getenv('WAIT_BEFORE_START') or 30)
+WAIT_BEFORE_START = int(os.getenv('WAIT_BEFORE_START') or 45)
