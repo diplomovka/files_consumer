@@ -251,6 +251,8 @@ def process_file_data(file_data):
 if __name__ == '__main__':
     time.sleep(settings.WAIT_BEFORE_START)
 
+    start_time = time.time()
+
     consumer = set_up_consumer()
     redis_db = get_redis_db(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_FILES_DB)
 
@@ -266,6 +268,7 @@ if __name__ == '__main__':
                 continue
 
             file_list_data = msg.value()
+            experiment_name = file_list_data.files[0].experiment_name
 
             if file_list_data.file_num % 1000 == 0:
                 print(file_list_data.file_num)
@@ -283,3 +286,8 @@ if __name__ == '__main__':
             print(e)
 
     consumer.close()
+
+    end_time = time.time()
+
+    with open(f'experiments_data/{experiment_name}_consumer_time.txt', 'a') as f:
+        f.write(f'Total consumer time in minutes: {(end_time - start_time) / 60}')
