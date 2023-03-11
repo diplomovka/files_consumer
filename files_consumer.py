@@ -11,12 +11,14 @@ from confluent_kafka.schema_registry.avro import AvroDeserializer
 from confluent_kafka.serialization import StringDeserializer
 from minio.error import S3Error
 from serialization_classes.file_data import FileData
+from serialization_classes.files_list_data import FileDataList
+from concurrent.futures import ThreadPoolExecutor
 import settings
 from minio_client import minio_client
 from redis_db import get_redis_db
 
 
-def dict_to_file_data(obj, ctx):
+def dict_to_file_data(obj):
     if obj is None:
         return None
 
@@ -28,6 +30,12 @@ def dict_to_file_data(obj, ctx):
                     experiment_name=obj['experiment_name'])
 
 
+def dict_to_files_list_data(obj, ctx):
+    return FileDataList(
+        files=[dict_to_file_data(file_data) for file_data in obj['files']],
+        last_file=obj['last_file'], file_num=obj['file_num'])
+
+
 def set_up_consumer():
     schema_registry_conf = {'url': settings.SCHEMA_REGISTRY_URL}
     schema_registry_client = SchemaRegistryClient(schema_registry_conf)
@@ -37,7 +45,7 @@ def set_up_consumer():
 
     avro_deserializer = AvroDeserializer(schema_registry_client,
                                          schema_str,
-                                         dict_to_file_data)
+                                         dict_to_files_list_data)
     string_deserializer = StringDeserializer(settings.ENCODING)
 
     topic = settings.FILES_TOPIC
@@ -169,8 +177,79 @@ def remove_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
         )
 
 
+def process_file_data(file_data):
+    file_name, chunk, chunk_hash, chunk_serial_num, end_of_file, experiment_name = get_attributes(file_data)
+
+    # print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
+    # print(f'filename: {file_name}')
+
+    pointer = redis_db.get(chunk_hash)
+    pointers_change_flag = True
+    # check if chunk is unique
+    if pointer is None:
+        pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
+                                    file_name, settings.FILES_BYTES_BUCKET)
+    else:
+        check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
+            experiment_name, file_name, settings.EXPERIMENTS_DATA_DIR)
+        pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
+
+    if not pointers_change_flag:
+        return
+
+    pointer_decoded = json.load(io.BytesIO(pointer))
+    file_name_json_ext = Path(file_name).stem + '.json'
+
+    try:
+        # check if file already has pointers
+        response = minio_client.get_object(settings.FILES_POINTERS_BUCKET, file_name_json_ext)
+        file_data = json.load(io.BytesIO(response.data))
+        total_file_pointers = len(file_data['pointers'])
+        
+        if total_file_pointers <= chunk_serial_num:
+            # content of the file was expanded
+            file_data['pointers'].append(pointer_decoded)
+
+        else:
+            # content of the file was changed
+            replaced_chunk_hash = file_data['pointers'][chunk_serial_num]['chunk_hash']
+            remove_chunk_usage(replaced_chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
+
+            file_data['pointers'][chunk_serial_num] = pointer_decoded
+
+            if end_of_file and (total_file_pointers - 1) > chunk_serial_num:
+                # content of the file was shrinked
+                f_pointers = file_data['pointers'][chunk_serial_num + 1:]
+                for i, chunk_pointer in enumerate(f_pointers):
+                    f_chunk_serial_num = chunk_serial_num + i + 1
+                    remove_chunk_usage(chunk_pointer['chunk_hash'], f_chunk_serial_num, file_name, chunk_pointer['bucket'])
+
+                # shrink list of chunk pointers
+                file_data['pointers'] = file_data['pointers'][:chunk_serial_num + 1]
+
+        response.close()
+        response.release_conn()
+    except S3Error as e:
+        if e.code == 'NoSuchKey':
+            file_data = {
+                'pointers': [pointer_decoded]
+            }
+
+    if pointers_change_flag and file_data:
+        file_data['original_file_name'] = file_name
+        file_data = json.dumps(file_data).encode('utf-8')
+
+        # update file pointers in MINIO
+        minio_client.put_object(
+            settings.FILES_POINTERS_BUCKET,
+            file_name_json_ext,
+            io.BytesIO(file_data),
+            len(file_data)
+        )
+
+
 if __name__ == '__main__':
-    time.sleep(settings.WAIT_BEFORE_START)
+    # time.sleep(settings.WAIT_BEFORE_START)
 
     consumer = set_up_consumer()
     redis_db = get_redis_db(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_FILES_DB)
@@ -182,80 +261,21 @@ if __name__ == '__main__':
     while True:
         try:
             # SIGINT can't be handled when polling, limit timeout to 1 second.
-            msg = consumer.poll()
+            msg = consumer.poll(1)
             if msg is None or msg.value() is None:
                 continue
 
-            file_data = msg.value()
+            file_list_data = msg.value()
 
-            file_name, chunk, chunk_hash, chunk_serial_num, end_of_file, experiment_name = get_attributes(file_data)
+            if file_list_data.file_num % 1000 == 0:
+                print(file_list_data.file_num)
 
-            # print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
-            print(f'filename: {file_name}')
+            if file_list_data.last_file:
+                break
 
-            pointer = redis_db.get(chunk_hash)
-            pointers_change_flag = True
-            # check if chunk is unique
-            if pointer is None:
-                pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
-                                            file_name, settings.FILES_BYTES_BUCKET)
-            else:
-                check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
-                    experiment_name, file_name, settings.EXPERIMENTS_DATA_DIR)
-                pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
-
-            if not pointers_change_flag:
-                continue
-
-            pointer_decoded = json.load(io.BytesIO(pointer))
-            file_name_json_ext = Path(file_name).stem + '.json'
-
-            try:
-                # check if file already has pointers
-                response = minio_client.get_object(settings.FILES_POINTERS_BUCKET, file_name_json_ext)
-                file_data = json.load(io.BytesIO(response.data))
-                total_file_pointers = len(file_data['pointers'])
-                
-                if total_file_pointers <= chunk_serial_num:
-                    # content of the file was expanded
-                    file_data['pointers'].append(pointer_decoded)
-
-                else:
-                    # content of the file was changed
-                    replaced_chunk_hash = file_data['pointers'][chunk_serial_num]['chunk_hash']
-                    remove_chunk_usage(replaced_chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
-
-                    file_data['pointers'][chunk_serial_num] = pointer_decoded
-
-                    if end_of_file and (total_file_pointers - 1) > chunk_serial_num:
-                        # content of the file was shrinked
-                        f_pointers = file_data['pointers'][chunk_serial_num + 1:]
-                        for i, chunk_pointer in enumerate(f_pointers):
-                            f_chunk_serial_num = chunk_serial_num + i + 1
-                            remove_chunk_usage(chunk_pointer['chunk_hash'], f_chunk_serial_num, file_name, chunk_pointer['bucket'])
-
-                        # shrink list of chunk pointers
-                        file_data['pointers'] = file_data['pointers'][:chunk_serial_num + 1]
-
-                response.close()
-                response.release_conn()
-            except S3Error as e:
-                if e.code == 'NoSuchKey':
-                    file_data = {
-                        'pointers': [pointer_decoded]
-                    }
-
-            if pointers_change_flag and file_data:
-                file_data['original_file_name'] = file_name
-                file_data = json.dumps(file_data).encode('utf-8')
-
-                # update file pointers in MINIO
-                minio_client.put_object(
-                    settings.FILES_POINTERS_BUCKET,
-                    file_name_json_ext,
-                    io.BytesIO(file_data),
-                    len(file_data)
-                )
+            with ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
+                for file_data in file_list_data.files:
+                    executor.submit(process_file_data, file_data)
 
         except KeyboardInterrupt:
             break

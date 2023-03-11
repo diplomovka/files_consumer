@@ -1,5 +1,7 @@
 import os
 
+MAX_WORKERS = int(os.getenv('MAX_WORKERS') or 8)
+
 REDIS_HOST = str(os.getenv('REDIS_HOST') or 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT') or 6379)
 REDIS_DB = int(os.getenv('REDIS_DB') or 0)
@@ -15,7 +17,7 @@ FILES_POINTERS_BUCKET = str(os.getenv('FILES_POINTERS_BUCKET') or 'files-pointer
 
 FILES_TOPIC = str(os.getenv('FILES_TOPIC') or 'FILES_TOPIC')
 
-FILES_SCHEMA_PATH = str(os.getenv('FILES_SCHEMA_PATH') or './avro_files/files.avsc')
+FILES_SCHEMA_PATH = str(os.getenv('FILES_SCHEMA_PATH') or './avro_files/files_array.avsc')
 
 BOOTSTRAP_SERVERS = str(os.getenv('BOOTSTRAP_SERVERS') or 'localhost:9092')
 SCHEMA_REGISTRY_URL = str(os.getenv('SCHEMA_REGISTRY_URL') or 'http://localhost:8085')
