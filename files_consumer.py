@@ -249,7 +249,7 @@ def process_file_data(file_data):
 
 
 if __name__ == '__main__':
-    # time.sleep(settings.WAIT_BEFORE_START)
+    time.sleep(settings.WAIT_BEFORE_START)
 
     consumer = set_up_consumer()
     redis_db = get_redis_db(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_FILES_DB)
