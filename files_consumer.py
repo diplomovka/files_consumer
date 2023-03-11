@@ -270,15 +270,12 @@ if __name__ == '__main__':
             file_list_data = msg.value()
             experiment_name = file_list_data.files[0].experiment_name
 
-            if file_list_data.file_num % 1000 == 0:
-                print(file_list_data.file_num)
-
-            if file_list_data.last_file:
-                break
-
             with ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
                 for file_data in file_list_data.files:
                     executor.submit(process_file_data, file_data)
+
+            if file_list_data.last_file:
+                break
 
         except KeyboardInterrupt:
             break
@@ -289,5 +286,5 @@ if __name__ == '__main__':
 
     end_time = time.time()
 
-    with open(f'experiments_data/{experiment_name}_consumer_time.txt', 'a') as f:
-        f.write(f'Total consumer time in minutes: {(end_time - start_time) / 60}')
+    with open(f'experiments_data/{experiment_name}/{experiment_name}_consumer_time.txt', 'a') as f:
+        f.write(f'Total execution time: {time.strftime("%H:%M:%S", time.gmtime(end_time - start_time))}')
