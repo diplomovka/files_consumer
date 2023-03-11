@@ -1,0 +1,28 @@
+{
+    "namespace": "example.text.schema",
+    "name": "file_list",
+    "type": "record",
+    "fields": [
+        {
+            "name": "files",
+            "type": {
+                "type": "array",
+                "items": {
+                    "namespace": "example.text.schema",
+                    "name": "file",
+                    "type": "record",
+                    "fields": [
+                        {"name": "file_name", "type": "string"},
+                        {"name": "chunk", "type": "bytes"},
+                        {"name": "chunk_hash", "type": "string"},
+                        {"name": "chunk_serial_num", "type": "int"},
+                        {"name": "end_of_file",  "type": "boolean"},
+                        {"name": "experiment_name", "type": "string"}
+                    ]
+                }
+            }
+        },
+        {"name": "last_file", "type": "boolean"},
+        {"name": "file_num", "type": "int"}
+    ]
+}
