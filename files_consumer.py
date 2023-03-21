@@ -287,4 +287,4 @@ if __name__ == '__main__':
     end_time = time.time()
 
     with open(f'experiments_data/{experiment_name}/{experiment_name}_consumer_time.txt', 'a') as f:
-        f.write(f'Total execution time: {time.strftime("%H:%M:%S", time.gmtime(end_time - start_time))}')
+        f.write(f'Total execution time in seconds: {end_time - start_time}')
