@@ -271,7 +271,7 @@ def process_file_data(file_data):
 
 
 if __name__ == '__main__':
-    # time.sleep(settings.WAIT_BEFORE_START)
+    time.sleep(settings.WAIT_BEFORE_START)
 
     start_time = time.time()
 
