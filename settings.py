@@ -2,10 +2,10 @@ import os
 
 MAX_WORKERS = int(os.getenv('MAX_WORKERS') or 8)
 
-REDIS_HOST = str(os.getenv('REDIS_HOST') or 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT') or 6379)
-REDIS_DB = int(os.getenv('REDIS_DB') or 0)
-REDIS_FILES_DB = int(os.getenv('REDIS_FILES_DB') or 1)
+HBASE_HOST = str(os.getenv('HBASE_HOST') or 'localhost')
+HBASE_PORT = int(os.getenv('HBASE_PORT') or 9090)
+HBASE_TABLE_NAME = str(os.getenv('HBASE_TABLE_NAME') or 'files-bytes-pointers')
+HBASE_COLUMN_FAMILY_NAME = str(os.getenv('HBASE_COLUMN_FAMILY_NAME') or 'column-family')
 
 MINIO_HOST = str(os.getenv('MINIO_HOST') or 'localhost')
 MINIO_PORT = str(os.getenv('MINIO_PORT') or '9000')

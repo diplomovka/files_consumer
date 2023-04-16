@@ -15,7 +15,7 @@ from serialization_classes.files_list_data import FileDataList
 from concurrent.futures import ThreadPoolExecutor
 import settings
 from minio_client import minio_client
-from redis_db import get_redis_db
+import happybase
 
 
 def dict_to_file_data(obj):
@@ -63,6 +63,20 @@ def set_up_consumer():
     return consumer
 
 
+def connect_to_hbase(hbase_host, hbase_port, hbase_table_name, hbase_column_family_name):
+    connection = happybase.Connection(hbase_host, port=hbase_port)
+
+    if hbase_table_name.encode('utf-8') not in connection.tables():
+        connection.create_table(
+            hbase_table_name,
+            {hbase_column_family_name: dict()}
+        )
+
+    hbase_table = connection.table(hbase_table_name)
+
+    return hbase_table
+
+
 def create_directory(directory_name):
     if not os.path.exists(directory_name) or not os.path.isdir(directory_name):
         os.mkdir(directory_name)
@@ -100,8 +114,12 @@ def update_pointer_data(chunk_hash, chunk, chunk_serial_num, file_name, bucket):
         'chunk_hash': chunk_hash
     }).encode('utf-8')
 
-    # update pointer in redis
-    redis_db.set(chunk_hash, pointer)
+    pointer_data = {
+        f'{settings.HBASE_COLUMN_FAMILY_NAME}:col': pointer
+    }
+
+    # update pointer in hbase
+    hbase_table.put(chunk_hash, pointer_data)
 
     return pointer
 
@@ -166,7 +184,7 @@ def remove_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
     # remove object only, when this was the last usage of it
     if len(chunk_data['used_in_files']) == 0 and usage_metadata_of_file['occurences'] == 0:
         minio_client.remove_object(bucket, object_name)
-        redis_db.delete(chunk_hash)
+        hbase_table.delete(chunk_hash)
     else:
         chunk_data = json.dumps(chunk_data).encode('utf-8')
         minio_client.put_object(
@@ -183,13 +201,17 @@ def process_file_data(file_data):
     # print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
     # print(f'filename: {file_name}')
 
-    pointer = redis_db.get(chunk_hash)
     pointers_change_flag = True
+    pointer = None
+    row = hbase_table.row(chunk_hash)
+
     # check if chunk is unique
-    if pointer is None:
+    if not row:
         pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
                                     file_name, settings.FILES_BYTES_BUCKET)
     else:
+        pointer = row[f'{settings.HBASE_COLUMN_FAMILY_NAME}:col'.encode('utf-8')]
+
         check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
             experiment_name, file_name, settings.EXPERIMENTS_DATA_DIR)
         pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
@@ -249,12 +271,14 @@ def process_file_data(file_data):
 
 
 if __name__ == '__main__':
-    time.sleep(settings.WAIT_BEFORE_START)
+    # time.sleep(settings.WAIT_BEFORE_START)
 
     start_time = time.time()
 
     consumer = set_up_consumer()
-    redis_db = get_redis_db(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_FILES_DB)
+    
+    hbase_table = connect_to_hbase(settings.HBASE_HOST, settings.HBASE_PORT,
+                            settings.HBASE_TABLE_NAME, settings.HBASE_COLUMN_FAMILY_NAME)
 
     create_directory(settings.EXPERIMENTS_DATA_DIR)
 
