@@ -75,11 +75,7 @@ def connect_to_hbase(hbase_host, hbase_port, hbase_table_name, hbase_column_fami
             {hbase_column_family_name: dict()}
         )
 
-    logging.debug('hbase table created')
-
     hbase_table = connection.table(hbase_table_name)
-
-    logging.debug('connected to table')
 
     return hbase_table
 
@@ -100,7 +96,7 @@ def get_attributes(file_data):
             file_data.chunk_serial_num, file_data.end_of_file, file_data.experiment_name)
 
 
-def update_pointer_data(chunk_hash, chunk, chunk_serial_num, file_name, bucket):
+def update_pointer_data(chunk_hash, chunk, chunk_serial_num, file_name, bucket, hbase_table):
     chunk_data = json.dumps({
         'used_in_files': {
             file_name: {'occurences': 1, 'at_indexes': [chunk_serial_num]}
@@ -175,7 +171,7 @@ def add_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
     return True
 
 
-def remove_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket):
+def remove_chunk_usage(chunk_hash, chunk_serial_num, file_name, bucket, hbase_table):
     object_name = f'{chunk_hash}.json'
     response = minio_client.get_object(bucket, object_name)
     chunk_data = json.load(io.BytesIO(response.data))
@@ -208,32 +204,29 @@ def process_file_data(file_data):
     # print(f'{msg.key()} FileData {file_name}, {chunk_hash}, {chunk_serial_num}, {experiment_name}, {end_of_file}')
     # print(f'filename: {file_name}')
 
+    hbase_table = connect_to_hbase(settings.HBASE_HOST, settings.HBASE_PORT,
+                            settings.HBASE_TABLE_NAME, settings.HBASE_COLUMN_FAMILY_NAME)
+
     pointers_change_flag = True
     pointer = None
-    logging.debug('getting hbase row')
     row = hbase_table.row(chunk_hash)
-    logging.debug('successfully retrieved hbase row')
 
     # check if chunk is unique
     if not row:
         pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
-                                    file_name, settings.FILES_BYTES_BUCKET)
+                                    file_name, settings.FILES_BYTES_BUCKET, hbase_table)
     else:
-        logging.debug('working with row')
         pointer = row[f'{settings.HBASE_COLUMN_FAMILY_NAME}:col'.encode('utf-8')]
-        logging.debug('all good with row')
 
         check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
             experiment_name, file_name, settings.EXPERIMENTS_DATA_DIR)
-        pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET)
+        pointers_change_flag = add_chunk_usage(chunk_hash, chunk_serial_num, file_name, settings.FILES_BYTES_BUCKET, hbase_table)
 
     if not pointers_change_flag:
         return
 
-    logging.debug('gonna store the chunk')
     pointer_decoded = json.load(io.BytesIO(pointer))
     file_name_json_ext = Path(file_name).stem + '.json'
-    logging.debug('created pointer_decoed')
 
     try:
         # check if file already has pointers
@@ -291,9 +284,6 @@ if __name__ == '__main__':
     start_time = time.time()
 
     consumer = set_up_consumer()
-    
-    hbase_table = connect_to_hbase(settings.HBASE_HOST, settings.HBASE_PORT,
-                            settings.HBASE_TABLE_NAME, settings.HBASE_COLUMN_FAMILY_NAME)
 
     create_directory(settings.EXPERIMENTS_DATA_DIR)
 
