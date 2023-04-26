@@ -67,8 +67,6 @@ def set_up_consumer():
 def connect_to_hbase(hbase_host, hbase_port, hbase_table_name, hbase_column_family_name):
     connection = happybase.Connection(hbase_host, port=hbase_port)
 
-    logging.debug('connected to hbase')
-
     if hbase_table_name.encode('utf-8') not in connection.tables():
         connection.create_table(
             hbase_table_name,
