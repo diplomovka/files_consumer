@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import settings
 from minio_client import minio_client
 import happybase
+import logging
 
 
 def dict_to_file_data(obj):
@@ -66,13 +67,19 @@ def set_up_consumer():
 def connect_to_hbase(hbase_host, hbase_port, hbase_table_name, hbase_column_family_name):
     connection = happybase.Connection(hbase_host, port=hbase_port)
 
+    logging.debug('connected to hbase')
+
     if hbase_table_name.encode('utf-8') not in connection.tables():
         connection.create_table(
             hbase_table_name,
             {hbase_column_family_name: dict()}
         )
 
+    logging.debug('hbase table created')
+
     hbase_table = connection.table(hbase_table_name)
+
+    logging.debug('connected to table')
 
     return hbase_table
 
@@ -203,14 +210,18 @@ def process_file_data(file_data):
 
     pointers_change_flag = True
     pointer = None
+    logging.debug('getting hbase row')
     row = hbase_table.row(chunk_hash)
+    logging.debug('successfully retrieved hbase row')
 
     # check if chunk is unique
     if not row:
         pointer = update_pointer_data(chunk_hash, chunk, chunk_serial_num,
                                     file_name, settings.FILES_BYTES_BUCKET)
     else:
+        logging.debug('working with row')
         pointer = row[f'{settings.HBASE_COLUMN_FAMILY_NAME}:col'.encode('utf-8')]
+        logging.debug('all good with row')
 
         check_collision_and_duplicate(chunk_hash, chunk, settings.FILES_BYTES_BUCKET,
             experiment_name, file_name, settings.EXPERIMENTS_DATA_DIR)
@@ -219,8 +230,10 @@ def process_file_data(file_data):
     if not pointers_change_flag:
         return
 
+    logging.debug('gonna store the chunk')
     pointer_decoded = json.load(io.BytesIO(pointer))
     file_name_json_ext = Path(file_name).stem + '.json'
+    logging.debug('created pointer_decoed')
 
     try:
         # check if file already has pointers
@@ -273,6 +286,8 @@ def process_file_data(file_data):
 if __name__ == '__main__':
     time.sleep(settings.WAIT_BEFORE_START)
 
+    logging.basicConfig(level=logging.DEBUG)
+
     start_time = time.time()
 
     consumer = set_up_consumer()
@@ -304,7 +319,7 @@ if __name__ == '__main__':
         except KeyboardInterrupt:
             break
         except Exception as e:
-            print(e)
+            logging.debug(e)
 
     consumer.close()
 
