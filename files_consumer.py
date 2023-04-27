@@ -16,7 +16,6 @@ from concurrent.futures import ThreadPoolExecutor
 import settings
 from minio_client import minio_client
 import happybase
-import logging
 
 
 def dict_to_file_data(obj):
@@ -277,8 +276,6 @@ def process_file_data(file_data):
 if __name__ == '__main__':
     time.sleep(settings.WAIT_BEFORE_START)
 
-    logging.basicConfig(level=logging.DEBUG)
-
     start_time = time.time()
 
     consumer = set_up_consumer()
@@ -307,7 +304,7 @@ if __name__ == '__main__':
         except KeyboardInterrupt:
             break
         except Exception as e:
-            logging.debug(e)
+            print(e)
 
     consumer.close()
 
