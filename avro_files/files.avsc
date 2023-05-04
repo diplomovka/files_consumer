@@ -4,10 +4,8 @@
     "type": "record",
     "fields": [
 		{"name": "file_name", "type": "string"},
-		{"name": "chunk", "type": "bytes"},
-		{"name": "chunk_hash", "type": "string"},
-		{"name": "chunk_serial_num", "type": "int"},
-		{"name": "end_of_file",  "type": "boolean"},
+		{"name": "data", "type": "bytes"},
+		{"name": "data_hash", "type": "string"},
 		{"name": "experiment_name", "type": "string"}
 	]
 }
