@@ -14,14 +14,15 @@ from minio_client import minio_client
 from redis_db import get_redis_db
 
 
-def dict_to_file_data(obj):
+def dict_to_file_data(obj, ctx):
     if obj is None:
         return None
 
     return FileData(file_name=obj['file_name'],
                     data=obj['data'],
                     data_hash=obj['data_hash'],
-                    experiment_name=obj['experiment_name'])
+                    experiment_name=obj['experiment_name'],
+                    last_file=obj['last_file'])
 
 
 def set_up_consumer():
@@ -56,14 +57,13 @@ def create_directory(directory_name):
         os.mkdir(directory_name)
 
 
-def create_required_buckets(buckets):
-    for bucket in buckets:
-        if not minio_client.bucket_exists(bucket):
-            minio_client.make_bucket(bucket)
+def create_required_buckets(bucket):
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
 
 
 def get_attributes(file_data):
-    return (file_data.file_name, file_data.data.decode('utf-8'), file_data.data_hash, file_data.experiment_name)
+    return (file_data.file_name, file_data.data, file_data.data_hash)
 
 
 def store_pointer_data_and_store_file_to_MINIO(data_hash, data, file_name, bucket):
@@ -94,6 +94,9 @@ def process_file_data(file_data):
     if pointer is None:
         pointer = store_pointer_data_and_store_file_to_MINIO(
             data_hash, data, file_name, settings.FILES_BUCKET)
+    else:
+        with open(f'./{settings.EXPERIMENTS_DATA_DIR}/{experiment_name}/{experiment_name}_duplicates.csv', 'a') as file:
+            file.write(f'{file_name};{data_hash}\n')
 
 
 if __name__ == '__main__':
