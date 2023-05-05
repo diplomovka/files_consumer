@@ -6,6 +6,7 @@
 		{"name": "file_name", "type": "string"},
 		{"name": "data", "type": "bytes"},
 		{"name": "data_hash", "type": "string"},
-		{"name": "experiment_name", "type": "string"}
+		{"name": "experiment_name", "type": "string"},
+		{"name": "last_file", "type": "boolean"}
 	]
 }
